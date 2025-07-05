@@ -1,0 +1,94 @@
+{
+  "project_info": {
+    "project_number": "318926159367",
+    "project_id": "timesgaze-41052",
+    "storage_bucket": "timesgaze-41052.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318926159367:android:edf96fe968f35b4ed6b4a2",
+        "android_client_info": {
+          "package_name": "com.timesgaze.timesgaze"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "318926159367-3sk3sf7j3h9gff32nf736r6ptvlkm16r.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.timesgaze.timesgaze",
+            "certificate_hash": "31a715d8095052518c34763f375aa3ac9a74935a"
+          }
+        },
+        {
+          "client_id": "318926159367-80n9abc5krdti2hkt0mtcaag73frs07a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.timesgaze.timesgaze",
+            "certificate_hash": "9bbb3186b2189ef16d8f272bdab59362c395cbb4"
+          }
+        },
+        {
+          "client_id": "318926159367-cerj9pasqjus8vc3b72rv93mteod2avl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.timesgaze.timesgaze",
+            "certificate_hash": "dab4b876a4368aece3540f5004ccd248807bcfab"
+          }
+        },
+        {
+          "client_id": "318926159367-jne6cd52gv66vtau63l5aounc9opaos5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.timesgaze.timesgaze",
+            "certificate_hash": "454fa9710b0ad4734896fdce5598a3cc9eed5e21"
+          }
+        },
+        {
+          "client_id": "318926159367-pkp2f07mcirfedqdudliq9k3u1ukc85k.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.timesgaze.timesgaze",
+            "certificate_hash": "e3ba15933104c3bf973ece94e809476bdc7174bc"
+          }
+        },
+        {
+          "client_id": "318926159367-roj26tf943ojr2b4n3ppang230cd5g0j.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.timesgaze.timesgaze",
+            "certificate_hash": "38f6a0a65449b44d579a15a5202c6e9314c35756"
+          }
+        },
+        {
+          "client_id": "318926159367-l1s7ujqveutg6pol9ke6vi21sgcdm47n.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBuDTUncLInc4CDZPSlEa9mt7dxpH6Jxvk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "YOUR_GOOGLE_CLIENT_ID",
+              "client_type": 3
+            },
+            {
+              "client_id": "318926159367-1uonio91oh4ui7m3j7lp5a8c1q7r9amu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.timesgaze.timesgaze"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
