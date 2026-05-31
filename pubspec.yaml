@@ -40,7 +40,7 @@ dependencies:
  
   flutter:
     sdk: flutter
-  flutter_facebook_auth: ^6.0.2
+  flutter_facebook_auth: ^7.1.6
   flutter_riverpod: ^2.4.0
   font_awesome_flutter: ^10.1.0
   google_sign_in: ^6.1.5
@@ -57,7 +57,7 @@ dependencies:
   package_info_plus: ^5.0.1
   permission_handler: ^11.1.0
   shimmer: ^3.0.0
-  flutter_web_auth: ^0.5.0
+  flutter_web_auth: ^0.6.0
   webview_flutter: ^4.8.0
   flutter_inappwebview:
   url_launcher: ^6.3.0
@@ -67,8 +67,19 @@ dependencies:
   intl:
   internet_connection_checker: ^1.0.0+1
  
-  flutter_secure_storage: ^8.1.0
+  flutter_secure_storage: ^10.2.0
   # wakelock: ^0.4.0
+
+dependency_overrides:
+  win32: ^6.0.0
+  win32_registry: ^3.0.0
+  flutter_secure_storage_windows: ^4.2.1
+  package_info_plus: ^10.0.0
+  package_info_plus_platform_interface: ^4.0.0
+  device_info_plus: ^13.0.0
+  device_info_plus_platform_interface: ^8.0.0
+  path_provider_windows: ^2.3.0
+  url_launcher_android: ^6.3.16
 
 dev_dependencies:
   flutter_launcher_icons: ^0.13.1

@@ -15,7 +15,17 @@ import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:logger/logger.dart';
 import 'package:popover/popover.dart';
 import 'package:timesgaze/controllers/auth_controller.dart';
-import 'package:timesgaze/repositories/auth_repositories.dart';
+import 'package:timesgaze/repositories/auth_repositories.dart'
+    show
+        AuthRepository,
+        PickerApiException,
+        isFetchingPhotosProvider,
+        islaunchphoto,
+        photosAppProvider,
+        photosNoInternetProvider,
+        pickerSessionProvider,
+        refreshTokenProvider,
+        showLoadingScreen;
 
 import 'package:timesgaze/screens/launch_photo_frame.dart';
 import 'package:timesgaze/screens/localStoredPhotos.dart';
@@ -35,11 +45,14 @@ class GooglePhotos extends ConsumerStatefulWidget {
   ConsumerState<GooglePhotos> createState() => _GooglePhotosState();
 }
 
-class _GooglePhotosState extends ConsumerState<GooglePhotos> {
+class _GooglePhotosState extends ConsumerState<GooglePhotos>
+    with WidgetsBindingObserver {
   final logger = Logger();
   final controller = car.CarouselSliderController();
   GoogleSignIn? googleSignIn = GoogleSignIn();
   String selectedOption = 'Last In';
+  bool _pickerOpened = false;
+  String? _currentAccessToken;
 
   void resetCarousel() {
     controller.jumpToPage(0);
@@ -48,9 +61,11 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
   late Timer _timer;
   late InternetConnectionChecker _internetChecker;
   bool _hasInternet = true;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setCurrentScreen();
     _internetChecker = InternetConnectionChecker()
       ..onStatusChange.listen((status) {
@@ -59,6 +74,23 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
         });
       });
     _startSignInTimer();
+    _loadInitialToken();
+  }
+
+  Future<void> _loadInitialToken() async {
+    final token = await _getAccessToken();
+    if (token != null && mounted) {
+      setState(() => _currentAccessToken = token);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When the user returns from the browser after selecting photos, auto-poll
+    if (state == AppLifecycleState.resumed && _pickerOpened) {
+      _pickerOpened = false;
+      _checkPickerSelection();
+    }
   }
 
   Future<void> _setCurrentScreen() async {
@@ -89,8 +121,84 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer.cancel();
     super.dispose();
+  }
+
+  Future<String?> _getAccessToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+    final doc = await FirebaseFirestore.instance
+        .collection('usersAuthDetails')
+        .doc(user.uid)
+        .get();
+    return doc.data()?['access_token'] as String?;
+  }
+
+  Future<void> _openPicker() async {
+    // Always get a fresh token to ensure it carries the Picker scope
+    final accessToken =
+        await ref.read(authControllerProvider).getFreshAccessToken();
+    if (accessToken == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not get Google account token. Please sign in again.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _currentAccessToken = accessToken);
+
+    try {
+      final session =
+          await ref.read(authControllerProvider).createPickerSession(accessToken);
+      if (session != null) {
+        setState(() {
+          _pickerOpened = true;
+        });
+      }
+    } on PickerApiException catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Photo Picker Error'),
+            content: Text(e.message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _checkPickerSelection() async {
+    final session = ref.read(pickerSessionProvider);
+    if (session == null) return;
+
+    final accessToken = await _getAccessToken();
+    if (accessToken == null) return;
+
+    setState(() => _currentAccessToken = accessToken);
+
+    final loaded = await ref
+        .read(authControllerProvider)
+        .fetchPickerMediaItems(session['sessionId']!, accessToken);
+
+    if (!loaded && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'No photos selected yet. Select photos in Google Photos and try again.'),
+        ),
+      );
+    }
   }
 
   // void signInSilently(BuildContext context, WidgetRef ref) {
@@ -181,28 +289,21 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
   @override
   Widget build(BuildContext context) {
     WakelockPlus.enable();
-    bool islaunchframe = ref.read(islaunchphoto);
+    bool islaunchframe = ref.watch(islaunchphoto);
     print("rrrrrrrrrrrrrrrr$islaunchframe");
 
-    //print(ref.read(photosAppProvider));
-    // final List<Map<String, dynamic>> lastInphotos =
-    //     widget.photos1.reversed.toList();
-    // ;
-    final List<Map<String, dynamic>> lastInphotos =
-        List.from(ref.read(photosAppProvider));
-    // print(lastInphotos);
+    final bool isFetching = ref.watch(isFetchingPhotosProvider);
+    final List<Map<String, dynamic>> allPhotos =
+        List.from(ref.watch(photosAppProvider));
 
+    final List<Map<String, dynamic>> lastInphotos = List.from(allPhotos);
     lastInphotos.sort((a, b) {
       final DateTime timeA = DateTime.parse(a['creationTime']);
-
       final DateTime timeB = DateTime.parse(b['creationTime']);
-
       return timeB.compareTo(timeA);
     });
 
-    //final List<Map<String, dynamic>> randomphotos = shuffleList(photosfinal);
-    final List<Map<String, dynamic>> randomphotos =
-        shuffleList(ref.read(photosAppProvider));
+    final List<Map<String, dynamic>> randomphotos = shuffleList(List.from(allPhotos));
 
     List<Map<String, dynamic>> memoryLanePhotos = [];
     bool isInLastMonths(DateTime creationDate, int months) {
@@ -242,14 +343,14 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
     }
 
     final List<Map<String, dynamic>> last1week =
-        filterPhotosByCreationDateWeek(ref.read(photosAppProvider), 1);
+        filterPhotosByCreationDateWeek(allPhotos, 1);
     final List<Map<String, dynamic>> last1MonthsPhotos =
-        filterPhotosByCreationDate(ref.read(photosAppProvider), 1);
+        filterPhotosByCreationDate(allPhotos, 1);
     final List<Map<String, dynamic>> last3MonthsPhotos =
-        filterPhotosByCreationDate(ref.read(photosAppProvider), 3);
+        filterPhotosByCreationDate(allPhotos, 3);
 
     final List<Map<String, dynamic>> last6MonthsPhotos =
-        filterPhotosByCreationDate(ref.read(photosAppProvider), 6);
+        filterPhotosByCreationDate(allPhotos, 6);
 
     if (last1week.isNotEmpty) {
       memoryLanePhotos = last1week;
@@ -261,42 +362,6 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
       memoryLanePhotos = last6MonthsPhotos;
     } else {
       print('No memory lane photos found.');
-    }
-    Future<void> fetchAlbums(String accessToken) async {
-      try {
-        await ref.read(authControllerProvider).fetchAlbums(accessToken);
-      } catch (e) {
-        print('Error fetching albums: $e');
-      }
-    }
-
-    Future<void> _refreshAlbums() async {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        try {
-          final docSnapshot = await FirebaseFirestore.instance
-              .collection('usersAuthDetails')
-              .doc(user.uid)
-              .get();
-
-          if (docSnapshot.exists) {
-            final data = docSnapshot.data();
-            final accessToken = data?['access_token'];
-            if (accessToken != null) {
-              await fetchAlbums(accessToken);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: ((context) => GooglePhotos(
-                          analytics: widget.analytics,
-                        ))),
-              );
-            }
-          }
-        } catch (e) {
-          print('Error retrieving access token: $e');
-        }
-      }
     }
     // if (last3MonthsPhotos.isNotEmpty) {
     //   // print('Displaying last 3 months photos: $last3MonthsPhotos');
@@ -519,8 +584,7 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
                   if (_hasInternet)
                     ElevatedButton(
                       onPressed: () {
-                        showLoadingScreen(context);
-                        _refreshAlbums();
+                        _openPicker();
                         setState(() {});
                       },
                       child: FaIcon(
@@ -580,7 +644,10 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
                             : (selectedOption == 'Random')
                                 ? randomphotos[index]['baseUrl']
                                 : memoryLanePhotos[index]['baseUrl'];
-                        return buildImage(photoFrame!, index, context);
+                        return buildImage(photoFrame!, index, context,
+                            headers: _currentAccessToken != null
+                                ? {'Authorization': 'Bearer $_currentAccessToken'}
+                                : null);
                       },
                     ),
                   ),
@@ -612,7 +679,19 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
               )
             : _hasInternet
                 ? Center(
-                    child: photosfinal.isNotEmpty
+                    child: isFetching
+                        ? Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.asset('assets/images/load.gif'),
+                              SizedBox(height: 10),
+                              Text(
+                                'Loading your photos...',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          )
+                        : allPhotos.isNotEmpty
                         ? Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -653,7 +732,10 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
                                                 : memoryLanePhotos[index]
                                                     ['baseUrl'];
                                         return buildImage(
-                                            photoFrame!, index, context);
+                                            photoFrame!, index, context,
+                                            headers: _currentAccessToken != null
+                                                ? {'Authorization': 'Bearer $_currentAccessToken'}
+                                                : null);
                                       },
                                     ),
                                   ),
@@ -707,20 +789,64 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
                               ),
                             ],
                           )
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Image.asset('assets/images/nodata.gif'),
-                              SizedBox(height: 10),
-                              Text(
-                                'It seems there are no albums to showcase!',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
+                        : _buildPickerEmptyState(deviceheight),
                   )
                 : GetPhotosFromLocalStorage(),
       ),
+    );
+  }
+
+  Widget _buildPickerEmptyState(double deviceheight) {
+    final session = ref.watch(pickerSessionProvider);
+    final isFetching = ref.watch(isFetchingPhotosProvider);
+
+    if (isFetching) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset('assets/images/load.gif'),
+          const SizedBox(height: 10),
+          const Text('Loading your selected photos...',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+        ],
+      );
+    }
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Image.asset('assets/images/nodata.gif'),
+        const SizedBox(height: 16),
+        const Text(
+          'Select photos from Google Photos to display',
+          style: TextStyle(fontWeight: FontWeight.w700),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 20),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: deviceheight * 0.04),
+          child: ElevatedButton.icon(
+            onPressed: _openPicker,
+            icon: const Icon(Icons.photo_library),
+            label: const Text('Select Photos from Google Photos'),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              backgroundColor: const Color.fromARGB(255, 245, 166, 75),
+              foregroundColor: Colors.black,
+            ),
+          ),
+        ),
+        if (session != null) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: deviceheight * 0.04),
+            child: OutlinedButton(
+              onPressed: _checkPickerSelection,
+              child: const Text("I've selected my photos — load them"),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -730,22 +856,16 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos> {
       controller.nextPage(duration: const Duration(milliseconds: 500));
 }
 
-Widget buildImage(String googlephotos, int index, BuildContext context) =>
+Widget buildImage(String googlephotos, int index, BuildContext context,
+        {Map<String, String>? headers}) =>
     Container(
-        margin: EdgeInsets.symmetric(
-          horizontal: 12.0,
-        ),
+        margin: EdgeInsets.symmetric(horizontal: 12.0),
         color: Colors.grey,
         child: CachedNetworkImage(
           imageUrl: googlephotos,
+          httpHeaders: headers,
           fit: BoxFit.fill,
-        )
-
-        //  Image.network(
-        //   googlephotos,
-        //   fit: BoxFit.fill,
-        // ),
-        );
+        ));
 
 class ListItems extends StatelessWidget {
   const ListItems({Key? key}) : super(key: key);

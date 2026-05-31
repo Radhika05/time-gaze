@@ -65,14 +65,6 @@ class _MyAppState extends ConsumerState<MyApp> {
     }
   }
 
-  Future<void> fetchAlbums(String accessToken) async {
-    try {
-      await ref.read(authControllerProvider).fetchAlbums(accessToken);
-    } catch (e) {
-      print('Error fetching albums: $e');
-    }
-  }
-
   Future<void> _initializeApp() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -84,12 +76,9 @@ class _MyAppState extends ConsumerState<MyApp> {
 
         if (docSnapshot.exists) {
           final data = docSnapshot.data();
-          final accessToken = data?['access_token'];
           final timestamp = data?['timestamp'];
-          final refreshToken =
-              await FlutterSecureStorage().read(key: 'refresh_token');
 
-          if (accessToken != null && timestamp != null && refreshToken != null) {
+          if (timestamp != null) {
             final currentTime = DateTime.now().toUtc();
             final tokenTime = DateTime.parse(timestamp);
             final difference = currentTime.difference(tokenTime);
@@ -101,9 +90,13 @@ class _MyAppState extends ConsumerState<MyApp> {
                   isTokenValid = true;
                 });
               }
-              await fetchAlbums(accessToken);
+              // Photos are loaded via the Google Photos Picker on the photos screen.
             } else {
-              await getToken(refreshToken, context);
+              final refreshToken =
+                  await FlutterSecureStorage().read(key: 'refresh_token');
+              if (refreshToken != null && mounted) {
+                await getToken(refreshToken, context);
+              }
             }
           }
         }

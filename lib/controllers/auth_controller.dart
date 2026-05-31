@@ -22,28 +22,24 @@ class AuthController {
     await _authRepository.getToken(refreshToken, context);
   }
 
-  fetchAlbums(String accessToken) async {
-    await _authRepository.fetchAlbums(accessToken);
+  Future<String?> getFreshAccessToken() async {
+    return await _authRepository.getFreshAccessToken();
+  }
+
+  Future<Map<String, String>?> createPickerSession(String accessToken) async {
+    return await _authRepository.createPickerSession(accessToken);
+  }
+
+  Future<bool> fetchPickerMediaItems(
+      String sessionId, String accessToken) async {
+    return await _authRepository.fetchPickerMediaItems(sessionId, accessToken);
   }
 
   signInWithGoogle(BuildContext context) async {
-    // await  _authRepository.signInWithGoogle(context);
     await _authRepository.authenticate(context);
   }
-
-  // void signInSilently(BuildContext context) async {
-  //   await _authRepository.signInSilently(context);
-  // }
-
-  // void signInWithFacebook(BuildContext context) {
-  //   _authRepository.signInWithFacebook(context);
-  // }
 
   logOut(BuildContext context) async {
     await _authRepository.logOut(context);
   }
-
-  // void logoutFromFacebook(BuildContext context) {
-  //   _authRepository.logoutFromFacebook(context);
-  // }
 }

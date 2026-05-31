@@ -86,21 +86,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await ref.read(authControllerProvider).signInWithGoogle(context);
       logGoogleSignInEvent();
 
-      // Fluttertoast.showToast(
-      //     msg: "Google Signed In successfully!",
-      //     toastLength: Toast.LENGTH_SHORT,
-      //     gravity: ToastGravity.BOTTOM,
-      //     timeInSecForIosWeb: 5,
-      //     backgroundColor: Colors.orange,
-      //     textColor: Colors.white,
-      //     fontSize: 16.0);
-      showLoadingScreen(context);
-      await Future.delayed(Duration(seconds: 20));
-
-      // Dismiss the loading dialog
-      Navigator.of(context).pop();
-
-      // Navigate to the GooglePhotos screen
+      // Navigate immediately — photos load in background with loading spinner
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(

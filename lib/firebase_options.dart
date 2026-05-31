@@ -51,11 +51,11 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBuDTUncLInc4CDZPSlEa9mt7dxpH6Jxvk',
-    appId: '1:318926159367:android:edf96fe968f35b4ed6b4a2',
-    messagingSenderId: '318926159367',
-    projectId: 'timesgaze-41052',
-    storageBucket: 'timesgaze-41052.appspot.com',
+    apiKey: 'AIzaSyA47Gsryenocs9uGNNJ6eU5M-GLnTBzYVY',
+    appId: '1:989810994749:android:2475b198a638c7dab50454',
+    messagingSenderId: '989810994749',
+    projectId: 'timesgaze-8c00f',
+    storageBucket: 'timesgaze-8c00f.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(

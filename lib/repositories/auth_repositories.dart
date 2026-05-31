@@ -20,6 +20,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timesgaze/screens/google_photos_screen.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:timesgaze/screens/login_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 final googlephotosProvider = StateProvider<List<String>>((ref) {
   return [];
@@ -41,7 +42,7 @@ final photosAppProvider = StateProvider<List<Map<String, String>>>((ref) {
 
 final defaultPhotos = StateProvider<String>((ref) => 'Last In');
 final LpfSelect = StateProvider<int>((ref) => 0);
-final islaunchphoto=StateProvider<bool>((ref)=>false);
+final islaunchphoto = StateProvider<bool>((ref) => false);
 final userName = StateProvider<String>((ref) => '');
 final userUid = StateProvider<String>((ref) => '');
 final userEmail = StateProvider<String>((ref) => '');
@@ -51,6 +52,12 @@ final refreshTokenProvider = StateProvider<String>((ref) => '');
 final photosNoInternetProvider = StateProvider<List<String>>((ref) {
   return [];
 });
+
+final isFetchingPhotosProvider = StateProvider<bool>((ref) => false);
+
+// Stores active picker session: {'sessionId': '...', 'pickerUri': '...'}
+final pickerSessionProvider = StateProvider<Map<String, String>?>((ref) => null);
+
 List<String> photosNoInternet = [];
 List<Map<String, String>> photosfinal = [];
 List<Map<String, String>> photosSilentfinal = [];
@@ -58,7 +65,14 @@ List<Map<String, String>> photosSilentfinal = [];
 final authRepositoryProvider = Provider((ref) => AuthRepository(
     firestore: FirebaseFirestore.instance,
     auth: FirebaseAuth.instance,
-    googleSignIn: GoogleSignIn(),
+    googleSignIn: GoogleSignIn(
+      serverClientId: '989810994749-911j2k5kbmaeoarjruhnuj6r4f7g4d5d.apps.googleusercontent.com',
+      scopes: [
+        'email',
+        'profile',
+        'https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
+      ],
+    ),
     analytics: FirebaseAnalytics.instance,
     ref: ref));
 
@@ -72,7 +86,7 @@ class AuthRepository {
   GoogleSignIn _googleSignIn;
   ProviderRef ref;
   final FirebaseAnalytics _analytics;
-  late AppLinks _appLinks; // AppLinks instance
+  late AppLinks _appLinks;
 
   AuthRepository({
     required FirebaseFirestore firestore,
@@ -86,14 +100,13 @@ class AuthRepository {
         _googleSignIn = googleSignIn;
 
   Future<void> initAppLinks() async {
-    _appLinks = AppLinks(); // Initialize AppLinks
+    _appLinks = AppLinks();
 
     try {
-      // Check if there is a method for getting the initial link.
-      final initialLink = await _appLinks.getInitialLink(); // Update this line
+      final initialLink = await _appLinks.getInitialLink();
       if (initialLink != null) {
         print('Initial link: $initialLink');
-        _handleDeepLink(initialLink); // Process the deep link
+        _handleDeepLink(initialLink);
       } else {
         print('No initial link found.');
       }
@@ -101,7 +114,7 @@ class AuthRepository {
       _sub = _appLinks.uriLinkStream.listen((Uri? link) {
         if (link != null) {
           print('Stream link: $link');
-          _handleDeepLink(link); // Handle link from stream
+          _handleDeepLink(link);
         }
       });
     } on PlatformException catch (e) {
@@ -115,7 +128,6 @@ class AuthRepository {
     final code = uri.queryParameters['code'];
     final accessToken = uri.queryParameters['accessToken'];
     final refreshToken = uri.queryParameters['refreshToken'];
-    final profile = uri.queryParameters['profile'];
 
     if (code != null) {
       print('Received code: $code');
@@ -154,7 +166,6 @@ class AuthRepository {
 
       ref.watch(userUid.notifier).update((state) => user?.uid ?? '');
       ref.watch(userEmail.notifier).update((state) => user?.email ?? '');
-      await fetchAlbums(accessToken123!);
     }
 
     if (refreshToken != null) {
@@ -180,47 +191,63 @@ class AuthRepository {
   }
 
   authenticate(BuildContext context) async {
-    final storage = FlutterSecureStorage();
-
     try {
-      final callbackUrlScheme = 'timesgaze';
-      final result = await FlutterWebAuth.authenticate(
-        url: 'https://timesgaze-oauth.vercel.app/auth/google',
-        callbackUrlScheme: callbackUrlScheme,
-      );
-      if (result.isEmpty) {
-        print('Authentication canceled by the user');
+      await _googleSignIn.disconnect().catchError((_) => null);
+      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+      if (account == null) {
         Fluttertoast.showToast(
-            msg: "Authentication canceled",
+            msg: "Sign in canceled",
             toastLength: Toast.LENGTH_SHORT,
             gravity: ToastGravity.BOTTOM,
             backgroundColor: Colors.red,
             textColor: Colors.white,
             fontSize: 16.0);
+        return;
       }
-      final uri = Uri.parse(result);
-      final accessTokennew = uri.queryParameters['accessToken'];
-      final refreshToken = uri.queryParameters['refreshToken'];
 
-      if (accessTokennew != null && refreshToken != null) {
-        await storage.write(key: 'access_token', value: accessTokennew);
-        await storage.write(key: 'refresh_token', value: refreshToken);
+      final auth = await account.authentication;
+      final accessToken = auth.accessToken;
+      final idToken = auth.idToken;
 
-        final profile = uri.queryParameters['profile'];
-        print('Profile Data: $profile');
-      } else {
-        print('Tokens are missing in the callback URL');
+      print('accessToken: ${accessToken != null ? "present" : "NULL"}');
+      print('idToken: ${idToken != null ? "present" : "NULL"}');
+
+      if (accessToken == null) {
+        print('No access token received');
+        return;
+      }
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: accessToken,
+        idToken: idToken,
+      );
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCredential.user;
+
+      if (user != null) {
+        final now = DateTime.now();
+        final formattedDate =
+            DateFormat('yyyy-MM-dd HH:mm:ss').format(now.toUtc());
+        await _firestore.collection('usersAuthDetails').doc(user.uid).set({
+          'access_token': accessToken,
+          'timestamp': formattedDate,
+        });
+        await FlutterSecureStorage()
+            .write(key: 'access_token', value: accessToken);
+
+        ref.read(userUid.notifier).state = user.uid;
+        ref.read(userEmail.notifier).state = user.email ?? '';
       }
     } catch (e) {
       print('Authentication error: $e');
-      // Fluttertoast.showToast(
-      //     msg: "Authentication failed",
-      //     toastLength: Toast.LENGTH_SHORT,
-      //     gravity: ToastGravity.BOTTOM,
-      //     backgroundColor: Colors.red,
-      //     textColor: Colors.white,
-      //     fontSize: 16.0);
-      //     return false;
+      Fluttertoast.showToast(
+          msg: "Error: ${e.toString()}",
+          toastLength: Toast.LENGTH_LONG,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+          fontSize: 14.0);
     }
   }
 
@@ -237,68 +264,35 @@ class AuthRepository {
   }
 
   getToken(String refreshToken, BuildContext context) async {
-    final String url = 'https://oauth2.googleapis.com/token';
-    final Map<String, String> headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    };
-
-    final Map<String, String> body = {
-      'client_id':
-          'YOUR_GOOGLE_CLIENT_ID',
-      'client_secret': 'YOUR_GOOGLE_CLIENT_SECRET',
-      'refresh_token': refreshToken,
-      'grant_type': 'refresh_token',
-    };
-
     try {
-      final response = await http.post(
-        Uri.parse(url),
-        headers: headers,
-        body: body,
-      );
+      final account = await _googleSignIn.signInSilently() ??
+          await _googleSignIn.signIn();
+      if (account == null) return;
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        accessToken123 = '${data['access_token']}';
-        await FlutterSecureStorage()
-            .write(key: 'access_token', value: accessToken123);
+      final auth = await account.authentication;
+      final accessToken = auth.accessToken;
+      if (accessToken == null) return;
 
-        final now = DateTime.now();
-        final formattedDate =
-            DateFormat('yyyy-MM-dd HH:mm:ss').format(now.toUtc());
-        final user = FirebaseAuth.instance.currentUser;
+      await FlutterSecureStorage()
+          .write(key: 'access_token', value: accessToken);
 
-        if (user != null) {
-          await FirebaseFirestore.instance
-              .collection('usersAuthDetails')
-              .doc(user.uid)
-              .update({
-            'access_token': accessToken123,
-            'timestamp': formattedDate,
-          });
-        }
+      final now = DateTime.now();
+      final formattedDate =
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(now.toUtc());
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await _firestore
+            .collection('usersAuthDetails')
+            .doc(user.uid)
+            .update({'access_token': accessToken, 'timestamp': formattedDate});
+      }
 
-        await fetchAlbums(accessToken123!);
-
-        if (response.statusCode == 200)
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-                builder: ((context) => GooglePhotos(
-                      analytics: _analytics,
-                    ))),
-          );
-        // Fluttertoast.showToast(
-        //     msg: "Google Signed In successfully!",
-        //     toastLength: Toast.LENGTH_SHORT,
-        //     gravity: ToastGravity.BOTTOM,
-        //     timeInSecForIosWeb: 5,
-        //     backgroundColor: Colors.orange,
-        //     textColor: Colors.white,
-        //     fontSize: 16.0);
-      } else {
-        print('Error: ${response.statusCode}');
-        print('Response body: ${response.body}');
+      if (context.mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+              builder: (context) => GooglePhotos(analytics: _analytics)),
+        );
       }
     } catch (e) {
       print('Exception: $e');
@@ -306,60 +300,188 @@ class AuthRepository {
   }
 
   signInSilently(BuildContext context) async {
-    final GoogleSignInAccount? googleSignInAccount =
-        await _googleSignIn.signInSilently();
-
-    if (googleSignInAccount != null) {
-      currentUser = googleSignInAccount;
-      await fetchAlbums('');
+    final account = await _googleSignIn.signInSilently();
+    if (account != null) {
+      currentUser = account;
+      final auth = await account.authentication;
+      if (auth.accessToken != null) {
+        await FlutterSecureStorage()
+            .write(key: 'access_token', value: auth.accessToken!);
+      }
     }
   }
 
-  Future<void> fetchAlbums(String accessToken) async {
+  /// Gets a fresh access token via silent sign-in, ensuring it has the Picker scope.
+  Future<String?> getFreshAccessToken() async {
+    try {
+      final account = await _googleSignIn.signInSilently(reAuthenticate: true) ??
+          await _googleSignIn.signIn();
+      if (account == null) return null;
+      final auth = await account.authentication;
+      if (auth.accessToken != null) {
+        // Update stored token
+        await FlutterSecureStorage()
+            .write(key: 'access_token', value: auth.accessToken!);
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final now = DateTime.now();
+          await _firestore.collection('usersAuthDetails').doc(user.uid).update({
+            'access_token': auth.accessToken!,
+            'timestamp': DateFormat('yyyy-MM-dd HH:mm:ss').format(now.toUtc()),
+          });
+        }
+      }
+      return auth.accessToken;
+    } catch (e) {
+      print('Error getting fresh access token: $e');
+      return null;
+    }
+  }
+
+  /// Creates a Google Photos Picker session and opens the picker in the browser.
+  /// Returns the session map with 'sessionId' and 'pickerUri', or null on failure.
+  /// Throws a [PickerApiException] with a user-facing message on API errors.
+  Future<Map<String, String>?> createPickerSession(String accessToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse('https://photospicker.googleapis.com/v1/sessions'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+      );
+      print('Picker session status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final sessionId = data['id'] as String;
+        print('Picker session id: $sessionId');
+        final session = {
+          'sessionId': sessionId,
+          'pickerUri': data['pickerUri'] as String,
+        };
+        ref.read(pickerSessionProvider.notifier).state = session;
+
+        await launchUrl(
+          Uri.parse(session['pickerUri']!),
+          mode: LaunchMode.externalApplication,
+        );
+        return session;
+      } else if (response.statusCode == 404) {
+        print('Picker API 404 — API not enabled. Body: ${response.body.substring(0, response.body.length.clamp(0, 200))}');
+        throw PickerApiException(
+          'Google Photos Picker API is not enabled in your Google Cloud Console project. '
+          'Go to APIs & Services → Library → search "Photos Picker API" → Enable it.',
+        );
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        print('Picker API ${response.statusCode}. Body: ${response.body.substring(0, response.body.length.clamp(0, 200))}');
+        throw PickerApiException(
+          'Access denied (${response.statusCode}). Sign out and sign in again to grant the required permission.',
+        );
+      } else {
+        print('Picker session error ${response.statusCode}: ${response.body.substring(0, response.body.length.clamp(0, 200))}');
+        throw PickerApiException('Failed to open photo picker (${response.statusCode}). Please try again.');
+      }
+    } on PickerApiException {
+      rethrow;
+    } catch (e) {
+      print('Error creating picker session: $e');
+      throw PickerApiException('Could not open photo picker: $e');
+    }
+  }
+
+  /// Polls the picker session and fetches selected media items.
+  /// Returns true if photos were loaded, false if no selection was made yet.
+  Future<bool> fetchPickerMediaItems(
+      String sessionId, String accessToken) async {
     final authHeaders = {
       'Authorization': 'Bearer $accessToken',
       'Content-Type': 'application/json',
     };
+
+    ref.read(isFetchingPhotosProvider.notifier).state = true;
     try {
-      var res = await http.get(
-          Uri.parse('https://photoslibrary.googleapis.com/v1/albums'),
-          headers: authHeaders);
-      final result = json.decode(res.body);
-      photosfinal = [];
-      ref.watch(photosAppProvider.notifier).update((state) => photosfinal);
-      print(ref.read(photosAppProvider));
-      if (result.containsKey('albums') && result['albums'] is List) {
-        for (var album in result['albums']) {
-          final albumId = album['id'];
-          // print(albumId);
-          await fetchPhotosForAlbum(albumId, authHeaders);
-        }
-        for (int j = 0; j < photosfinal.length && j < 50; j++) {
-          String baseUrl = photosfinal[j]['baseUrl']!;
+      final sessionResponse = await http.get(
+        Uri.parse('https://photospicker.googleapis.com/v1/sessions/$sessionId'),
+        headers: authHeaders,
+      );
+      print('Session poll status: ${sessionResponse.statusCode}');
+      final sessionData = json.decode(sessionResponse.body);
 
-          // Download and save the image
-          String savedFilePath = await downloadAndSaveImage(baseUrl, j);
-          print("saved: $savedFilePath");
-
-          // Store the file path in photosNoInternet if not null
-          if (savedFilePath != null) {
-            photosNoInternet.add(savedFilePath);
-            // Store the file path in localPhotos
-          }
-        }
-        ref
-            .watch(photosNoInternetProvider.notifier)
-            .update((state) => photosNoInternet);
-      } else {
-        print('No albums found.');
+      if (sessionData['mediaItemsSet'] != true) {
+        print('No items selected yet.');
+        return false;
       }
+
+      photosfinal = [];
+      ref.read(photosAppProvider.notifier).state = [];
+
+      String nextPageToken = '';
+      do {
+        final queryParams = {
+          'sessionId': sessionId,
+          'pageSize': '100',
+          if (nextPageToken.isNotEmpty) 'pageToken': nextPageToken,
+        };
+        final url = Uri.https(
+          'photospicker.googleapis.com',
+          '/v1/mediaItems',
+          queryParams,
+        );
+        final response = await http.get(url, headers: authHeaders);
+        print('Picker items status: ${response.statusCode}');
+
+        if (response.statusCode != 200) {
+          print('Picker items error: ${response.body}');
+          break;
+        }
+
+        final result = json.decode(response.body);
+        if (result['mediaItems'] is List) {
+          for (var item in result['mediaItems']) {
+            final mediaFile = item['mediaFile'];
+            if (mediaFile?['baseUrl'] != null) {
+              photosfinal.add({
+                'baseUrl': '${mediaFile['baseUrl']}=w2048-h2048',
+                'creationTime': item['createTime'] ??
+                    DateTime.now().toIso8601String(),
+              });
+            }
+          }
+          ref.read(photosAppProvider.notifier).state = List.from(photosfinal);
+        }
+        nextPageToken = result['nextPageToken'] ?? '';
+      } while (nextPageToken.isNotEmpty);
+
+      // Cache for offline use
+      photosNoInternet = [];
+      for (int j = 0; j < photosfinal.length && j < 50; j++) {
+        final path =
+            await downloadAndSaveImage(photosfinal[j]['baseUrl']!, j);
+        if (path.isNotEmpty) photosNoInternet.add(path);
+      }
+      ref.read(photosNoInternetProvider.notifier).state =
+          List.from(photosNoInternet);
+
+      // Clean up the session
+      await http.delete(
+        Uri.parse('https://photospicker.googleapis.com/v1/sessions/$sessionId'),
+        headers: authHeaders,
+      );
+      ref.read(pickerSessionProvider.notifier).state = null;
+
+      return photosfinal.isNotEmpty;
     } catch (e) {
-      print('Error fetching albums: $e');
+      print('Error fetching picker items: $e');
+      return false;
+    } finally {
+      ref.read(isFetchingPhotosProvider.notifier).state = false;
     }
   }
 
   logOut(BuildContext context) {
     ref.watch(photosAppProvider.notifier).update((state) => []);
+    ref.read(pickerSessionProvider.notifier).state = null;
     photosfinal = [];
     print(ref.read(photosAppProvider));
     GoogleSignIn? googleSignIn = GoogleSignIn();
@@ -376,56 +498,13 @@ class AuthRepository {
       (Route<dynamic> route) => false,
     );
   }
+}
 
-  Future<void> fetchPhotosForAlbum(
-      String albumId, Map<String, String> authHeaders) async {
-    try {
-      String nextPageToken = '';
-
-      do {
-        final url = Uri.parse(
-            'https://photoslibrary.googleapis.com/v1/mediaItems:search?pageToken=$nextPageToken');
-        final response = await http.post(
-          url,
-          headers: authHeaders,
-          body: jsonEncode({
-            "albumId": albumId,
-          }),
-        );
-        final result = json.decode(response.body);
-
-        if (result.containsKey('mediaItems') && result['mediaItems'] is List) {
-          for (var i in result['mediaItems']) {
-            photosfinal.add({
-              'baseUrl': i['baseUrl'],
-              'creationTime': i['mediaMetadata']['creationTime'],
-            });
-
-            ref
-                .watch(photosAppProvider.notifier)
-                .update((state) => photosfinal);
-
-            photosSilentfinal.add({
-              'baseUrl': i['baseUrl'],
-              'creationTime': i['mediaMetadata']['creationTime'],
-            });
-            int baseUrlCount = photosfinal
-                .where((photo) => photo.containsKey('baseUrl'))
-                .length;
-            print('Total baseUrls: $baseUrlCount');
-
-            //print(photosfinal.length);
-            //print(photosfinal);
-            // print(i['mediaMetadata']['creationTime']);
-          }
-        }
-
-        nextPageToken = result['nextPageToken'] ?? '';
-      } while (nextPageToken.isNotEmpty);
-    } catch (e) {
-      print('Error fetching photos for album $albumId: $e');
-    }
-  }
+class PickerApiException implements Exception {
+  final String message;
+  PickerApiException(this.message);
+  @override
+  String toString() => message;
 }
 
 void showLoadingScreen(BuildContext context) {
@@ -453,21 +532,18 @@ void showLoadingScreen(BuildContext context) {
 
 Future<String> downloadAndSaveImage(String url, int index) async {
   try {
-    // Get local path for storage
     final directory = await getApplicationDocumentsDirectory();
     final filePath = '${directory.path}/photo_$index.jpg';
 
-    // Download image
     final response = await http.get(Uri.parse(url));
     final file = File(filePath);
 
-    // Save image locally
     await file.writeAsBytes(response.bodyBytes);
 
     print('Photo saved at $filePath');
-    return filePath; // Return the file path where the image was saved
+    return filePath;
   } catch (e) {
     print('Error saving photo: $e');
-    return ''; // Return null if there's an error
+    return '';
   }
 }
