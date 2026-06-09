@@ -63,7 +63,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     _setCurrentScreen();
-    linkUni();
   }
 
   Future<void> _setCurrentScreen() async {
@@ -75,10 +74,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       },
     );
     logger.i("Screen view logged: LoginScreen");
-  }
-
-  linkUni() async {
-    await ref.read(authControllerProvider).initUniLinks();
   }
 
   void signInWithGoogle(BuildContext context, WidgetRef ref) async {

@@ -18,6 +18,10 @@ class AuthController {
     await _authRepository.initAppLinks();
   }
 
+  Future<bool> tryAutoSignIn() async {
+    return await _authRepository.tryAutoSignIn();
+  }
+
   getToken(String refreshToken, BuildContext context) async {
     await _authRepository.getToken(refreshToken, context);
   }
@@ -33,6 +37,36 @@ class AuthController {
   Future<bool> fetchPickerMediaItems(
       String sessionId, String accessToken) async {
     return await _authRepository.fetchPickerMediaItems(sessionId, accessToken);
+  }
+
+  Future<List<PickerAlbum>> loadPickerAlbums() async {
+    return await _authRepository.loadPickerAlbums();
+  }
+
+  Future<PickerAlbum?> saveCurrentPhotosAsAlbum(
+      String name, String? accessToken) async {
+    return await _authRepository.saveCurrentPhotosAsAlbum(name, accessToken);
+  }
+
+  void loadAlbumPhotos(PickerAlbum album) {
+    _authRepository.loadAlbumPhotos(album);
+  }
+
+  Future<void> deletePickerAlbum(String albumId) async {
+    await _authRepository.deletePickerAlbum(albumId);
+  }
+
+  Future<void> updateAlbumEnabled(String albumId, bool isEnabled) async {
+    await _authRepository.updateAlbumEnabled(albumId, isEnabled);
+  }
+
+  Future<void> updatePhotoSelection(
+      String albumId, List<int> disabledIndices) async {
+    await _authRepository.updatePhotoSelection(albumId, disabledIndices);
+  }
+
+  void loadSelectedPhotos() {
+    _authRepository.loadSelectedPhotos();
   }
 
   signInWithGoogle(BuildContext context) async {

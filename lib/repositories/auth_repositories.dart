@@ -9,14 +9,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_web_auth/flutter_web_auth.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timesgaze/common/app_logger.dart';
 import 'package:timesgaze/screens/google_photos_screen.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:timesgaze/screens/login_screen.dart';
@@ -58,6 +57,77 @@ final isFetchingPhotosProvider = StateProvider<bool>((ref) => false);
 // Stores active picker session: {'sessionId': '...', 'pickerUri': '...'}
 final pickerSessionProvider = StateProvider<Map<String, String>?>((ref) => null);
 
+// Album save progress: (photosDownloaded, totalPhotos) — null when not saving
+final albumSaveProgressProvider =
+    StateProvider<(int, int)?>((ref) => null);
+
+class PickerAlbum {
+  final String id;
+  final String name;
+  final String? thumbnailPath;
+  final List<String> photoPaths;
+  final DateTime createdAt;
+  final bool isEnabled;
+  final List<int> disabledPhotoIndices;
+
+  const PickerAlbum({
+    required this.id,
+    required this.name,
+    this.thumbnailPath,
+    required this.photoPaths,
+    required this.createdAt,
+    this.isEnabled = true,
+    this.disabledPhotoIndices = const [],
+  });
+
+  PickerAlbum copyWith({bool? isEnabled, List<int>? disabledPhotoIndices}) =>
+      PickerAlbum(
+        id: id,
+        name: name,
+        thumbnailPath: thumbnailPath,
+        photoPaths: photoPaths,
+        createdAt: createdAt,
+        isEnabled: isEnabled ?? this.isEnabled,
+        disabledPhotoIndices: disabledPhotoIndices ?? this.disabledPhotoIndices,
+      );
+
+  int get enabledPhotoCount =>
+      photoPaths.length - disabledPhotoIndices.length;
+
+  List<String> get enabledPhotoPaths {
+    if (disabledPhotoIndices.isEmpty) return List.from(photoPaths);
+    final disabled = Set<int>.from(disabledPhotoIndices);
+    return [
+      for (int i = 0; i < photoPaths.length; i++)
+        if (!disabled.contains(i)) photoPaths[i],
+    ];
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'thumbnailPath': thumbnailPath,
+        'photoPaths': photoPaths,
+        'createdAt': createdAt.toIso8601String(),
+        'isEnabled': isEnabled,
+        'disabledPhotoIndices': disabledPhotoIndices,
+      };
+
+  factory PickerAlbum.fromJson(Map<String, dynamic> json) => PickerAlbum(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        thumbnailPath: json['thumbnailPath'] as String?,
+        photoPaths: List<String>.from(json['photoPaths'] as List),
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        isEnabled: json['isEnabled'] as bool? ?? true,
+        disabledPhotoIndices: json['disabledPhotoIndices'] != null
+            ? List<int>.from(json['disabledPhotoIndices'] as List)
+            : const [],
+      );
+}
+
+final pickerAlbumsProvider = StateProvider<List<PickerAlbum>>((ref) => []);
+
 List<String> photosNoInternet = [];
 List<Map<String, String>> photosfinal = [];
 List<Map<String, String>> photosSilentfinal = [];
@@ -98,6 +168,242 @@ class AuthRepository {
         _firestore = firestore,
         _analytics = analytics,
         _googleSignIn = googleSignIn;
+
+  static const String _albumsPrefsKey = 'picker_albums_v2';
+
+  Future<List<PickerAlbum>> loadPickerAlbums() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_albumsPrefsKey);
+      if (raw == null) {
+        ref.read(pickerAlbumsProvider.notifier).state = [];
+        return [];
+      }
+      final list = (json.decode(raw) as List)
+          .map((e) => PickerAlbum.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final valid = list
+          .where((a) =>
+              a.photoPaths.isNotEmpty && File(a.photoPaths.first).existsSync())
+          .toList();
+      if (valid.length < list.length) {
+        AppLogger.w(
+            'Dropped ${list.length - valid.length} album(s) with missing files');
+      }
+      ref.read(pickerAlbumsProvider.notifier).state = valid;
+      AppLogger.d('Loaded ${valid.length} album(s)');
+      return valid;
+    } catch (e, st) {
+      AppLogger.e('Failed to load albums from prefs', error: e, stackTrace: st);
+      ref.read(pickerAlbumsProvider.notifier).state = [];
+      return [];
+    }
+  }
+
+  Future<PickerAlbum?> saveCurrentPhotosAsAlbum(
+      String name, String? accessToken) async {
+    if (photosfinal.isEmpty) return null;
+
+    final albumId = DateTime.now().millisecondsSinceEpoch.toString();
+    final directory = await getApplicationDocumentsDirectory();
+    final albumDir = Directory('${directory.path}/albums/$albumId');
+    await albumDir.create(recursive: true);
+
+    final headers = accessToken != null
+        ? {'Authorization': 'Bearer $accessToken'}
+        : <String, String>{};
+
+    ref.read(albumSaveProgressProvider.notifier).state =
+        (0, photosfinal.length);
+
+    final photoPaths = <String>[];
+    int failedCount = 0;
+    try {
+      for (int i = 0; i < photosfinal.length; i++) {
+        final url = photosfinal[i]['baseUrl']!;
+        final filePath = '${albumDir.path}/$i.jpg';
+        try {
+          final response = await http
+              .get(Uri.parse(url), headers: headers)
+              .timeout(const Duration(seconds: 30));
+          if (response.statusCode == 200) {
+            await File(filePath).writeAsBytes(response.bodyBytes);
+            photoPaths.add(filePath);
+          } else {
+            AppLogger.w('Photo $i download returned ${response.statusCode}');
+            failedCount++;
+          }
+        } catch (e) {
+          AppLogger.w('Photo $i download failed', error: e);
+          failedCount++;
+        }
+        ref.read(albumSaveProgressProvider.notifier).state =
+            (i + 1, photosfinal.length);
+      }
+    } finally {
+      ref.read(albumSaveProgressProvider.notifier).state = null;
+    }
+    if (failedCount > 0) {
+      AppLogger.w(
+          '$failedCount of ${photosfinal.length} photo(s) failed to download');
+    }
+
+    if (photoPaths.isEmpty) {
+      await albumDir.delete(recursive: true);
+      return null;
+    }
+
+    final album = PickerAlbum(
+      id: albumId,
+      name: name,
+      thumbnailPath: photoPaths.first,
+      photoPaths: photoPaths,
+      createdAt: DateTime.now(),
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_albumsPrefsKey);
+    final existing = raw != null
+        ? (json.decode(raw) as List)
+            .map((e) =>
+                PickerAlbum.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList()
+        : <PickerAlbum>[];
+    existing.add(album);
+    await prefs.setString(
+      _albumsPrefsKey,
+      json.encode(existing.map((a) => a.toJson()).toList()),
+    );
+    ref.read(pickerAlbumsProvider.notifier).state = List.from(existing);
+    return album;
+  }
+
+  void loadAlbumPhotos(PickerAlbum album) {
+    final photos = album.photoPaths
+        .map((p) => {
+              'baseUrl': p,
+              'creationTime': album.createdAt.toIso8601String(),
+            })
+        .toList();
+    photosfinal = photos;
+    ref.read(photosAppProvider.notifier).state = List.from(photos);
+    ref.read(photosNoInternetProvider.notifier).state =
+        List.from(album.photoPaths);
+  }
+
+  Future<void> deletePickerAlbum(String albumId) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final albumDir = Directory('${directory.path}/albums/$albumId');
+    if (await albumDir.exists()) {
+      await albumDir.delete(recursive: true);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_albumsPrefsKey);
+    if (raw == null) return;
+
+    final updated = (json.decode(raw) as List)
+        .map((e) => PickerAlbum.fromJson(Map<String, dynamic>.from(e as Map)))
+        .where((a) => a.id != albumId)
+        .toList();
+    await prefs.setString(
+      _albumsPrefsKey,
+      json.encode(updated.map((a) => a.toJson()).toList()),
+    );
+    ref.read(pickerAlbumsProvider.notifier).state = updated;
+  }
+
+  Future<void> updateAlbumEnabled(String albumId, bool isEnabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_albumsPrefsKey);
+    if (raw == null) return;
+    final updated = (json.decode(raw) as List)
+        .map((e) => PickerAlbum.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map((a) => a.id == albumId ? a.copyWith(isEnabled: isEnabled) : a)
+        .toList();
+    await prefs.setString(
+        _albumsPrefsKey, json.encode(updated.map((a) => a.toJson()).toList()));
+    ref.read(pickerAlbumsProvider.notifier).state = updated;
+  }
+
+  Future<void> updatePhotoSelection(
+      String albumId, List<int> disabledIndices) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_albumsPrefsKey);
+    if (raw == null) return;
+    final updated = (json.decode(raw) as List)
+        .map((e) => PickerAlbum.fromJson(Map<String, dynamic>.from(e as Map)))
+        .map((a) =>
+            a.id == albumId ? a.copyWith(disabledPhotoIndices: disabledIndices) : a)
+        .toList();
+    await prefs.setString(
+        _albumsPrefsKey, json.encode(updated.map((a) => a.toJson()).toList()));
+    ref.read(pickerAlbumsProvider.notifier).state = updated;
+  }
+
+  void loadSelectedPhotos() {
+    final albums = ref.read(pickerAlbumsProvider);
+    final photos = <Map<String, String>>[];
+    for (final album in albums) {
+      if (!album.isEnabled) continue;
+      for (final path in album.enabledPhotoPaths) {
+        photos.add({
+          'baseUrl': path,
+          'creationTime': album.createdAt.toIso8601String(),
+        });
+      }
+    }
+    photosfinal = photos;
+    ref.read(photosAppProvider.notifier).state = List.from(photos);
+    ref.read(photosNoInternetProvider.notifier).state =
+        photos.map((p) => p['baseUrl']!).toList();
+  }
+
+  /// Attempts a silent Google sign-in using the existing Firebase session.
+  /// Returns true if a fresh access token was obtained (user can skip login).
+  Future<bool> tryAutoSignIn() async {
+    try {
+      final firebaseUser = _auth.currentUser;
+      if (firebaseUser == null) {
+        AppLogger.d('Auto sign-in: no Firebase session');
+        return false;
+      }
+
+      final account = await _googleSignIn.signInSilently();
+      if (account == null) {
+        AppLogger.d('Auto sign-in: silent sign-in returned null');
+        return false;
+      }
+
+      final auth = await account.authentication;
+      final accessToken = auth.accessToken;
+      if (accessToken == null) {
+        AppLogger.d('Auto sign-in: no access token');
+        return false;
+      }
+
+      await FlutterSecureStorage()
+          .write(key: 'access_token', value: accessToken);
+      final timestamp =
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now().toUtc());
+      await _firestore
+          .collection('usersAuthDetails')
+          .doc(firebaseUser.uid)
+          .update({'access_token': accessToken, 'timestamp': timestamp});
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', true);
+
+      ref.read(userUid.notifier).state = firebaseUser.uid;
+      ref.read(userEmail.notifier).state = firebaseUser.email ?? '';
+
+      AppLogger.i('Auto sign-in OK: ${firebaseUser.email}');
+      return true;
+    } catch (e) {
+      AppLogger.w('Auto sign-in failed', error: e);
+      return false;
+    }
+  }
 
   Future<void> initAppLinks() async {
     _appLinks = AppLinks();
@@ -453,16 +759,6 @@ class AuthRepository {
         nextPageToken = result['nextPageToken'] ?? '';
       } while (nextPageToken.isNotEmpty);
 
-      // Cache for offline use
-      photosNoInternet = [];
-      for (int j = 0; j < photosfinal.length && j < 50; j++) {
-        final path =
-            await downloadAndSaveImage(photosfinal[j]['baseUrl']!, j);
-        if (path.isNotEmpty) photosNoInternet.add(path);
-      }
-      ref.read(photosNoInternetProvider.notifier).state =
-          List.from(photosNoInternet);
-
       // Clean up the session
       await http.delete(
         Uri.parse('https://photospicker.googleapis.com/v1/sessions/$sessionId'),
@@ -479,24 +775,40 @@ class AuthRepository {
     }
   }
 
-  logOut(BuildContext context) {
-    ref.watch(photosAppProvider.notifier).update((state) => []);
+  Future<void> logOut(BuildContext context) async {
+    // Clear all in-memory state
+    ref.read(photosAppProvider.notifier).state = [];
     ref.read(pickerSessionProvider.notifier).state = null;
+    ref.read(pickerAlbumsProvider.notifier).state = [];
     photosfinal = [];
-    print(ref.read(photosAppProvider));
-    GoogleSignIn? googleSignIn = GoogleSignIn();
 
-    googleSignIn.signOut();
-    _auth.signOut();
+    // disconnect() revokes app access and clears the cached account so the
+    // account-picker appears on the next sign-in (enables switching accounts)
+    try {
+      await _googleSignIn.disconnect();
+    } catch (e) {
+      AppLogger.w('Google disconnect error (non-fatal)', error: e);
+    }
+    await _auth.signOut();
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-          builder: (context) => LoginScreen(
-                analytics: _analytics,
-              )),
-      (Route<dynamic> route) => false,
-    );
+    // Clear stored credentials
+    const storage = FlutterSecureStorage();
+    await storage.delete(key: 'access_token');
+    await storage.delete(key: 'refresh_token');
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedIn', false);
+
+    AppLogger.i('User signed out');
+
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+            builder: (context) => LoginScreen(analytics: _analytics)),
+        (Route<dynamic> route) => false,
+      );
+    }
   }
 }
 
