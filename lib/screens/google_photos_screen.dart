@@ -243,7 +243,6 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
     setState(() => _openingPicker = true);
 
     try {
-      // Always get a fresh token to ensure it carries the Picker scope
       final accessToken =
           await ref.read(authControllerProvider).getFreshAccessToken();
       if (accessToken == null) {

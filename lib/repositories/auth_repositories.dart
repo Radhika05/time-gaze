@@ -620,26 +620,32 @@ class AuthRepository {
   /// Gets a fresh access token via silent sign-in, ensuring it has the Picker scope.
   Future<String?> getFreshAccessToken() async {
     try {
-      final account = await _googleSignIn.signInSilently(reAuthenticate: true) ??
-          await _googleSignIn.signIn();
-      if (account == null) return null;
+      // Use cached user first to avoid unnecessary re-auth prompts
+      GoogleSignInAccount? account = _googleSignIn.currentUser;
+      account ??= await _googleSignIn.signInSilently();
+      account ??= await _googleSignIn.signIn();
+      if (account == null) {
+        AppLogger.w('getFreshAccessToken: no account obtained');
+        return null;
+      }
       final auth = await account.authentication;
-      if (auth.accessToken != null) {
-        // Update stored token
-        await FlutterSecureStorage()
-            .write(key: 'access_token', value: auth.accessToken!);
-        final user = FirebaseAuth.instance.currentUser;
-        if (user != null) {
-          final now = DateTime.now();
-          await _firestore.collection('usersAuthDetails').doc(user.uid).update({
-            'access_token': auth.accessToken!,
-            'timestamp': DateFormat('yyyy-MM-dd HH:mm:ss').format(now.toUtc()),
-          });
-        }
+      if (auth.accessToken == null) {
+        AppLogger.w('getFreshAccessToken: accessToken is null for ${account.email}');
+        return null;
+      }
+      await FlutterSecureStorage()
+          .write(key: 'access_token', value: auth.accessToken!);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final now = DateTime.now();
+        await _firestore.collection('usersAuthDetails').doc(user.uid).update({
+          'access_token': auth.accessToken!,
+          'timestamp': DateFormat('yyyy-MM-dd HH:mm:ss').format(now.toUtc()),
+        });
       }
       return auth.accessToken;
     } catch (e) {
-      print('Error getting fresh access token: $e');
+      AppLogger.e('Error getting fresh access token', error: e);
       return null;
     }
   }
