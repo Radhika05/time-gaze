@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "540161251770",
+    "project_id": "timesgaze-6076f",
+    "storage_bucket": "timesgaze-6076f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:540161251770:android:422d35c47181652efde583",
+        "android_client_info": {
+          "package_name": "com.timesgaze.timesgaze"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnvPq-rw4f1YqvSKXo0QUCUv5bmPeDpbo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

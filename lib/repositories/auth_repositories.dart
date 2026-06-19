@@ -136,7 +136,7 @@ final authRepositoryProvider = Provider((ref) => AuthRepository(
     firestore: FirebaseFirestore.instance,
     auth: FirebaseAuth.instance,
     googleSignIn: GoogleSignIn(
-      serverClientId: '989810994749-911j2k5kbmaeoarjruhnuj6r4f7g4d5d.apps.googleusercontent.com',
+      serverClientId: '540161251770-9glr2ct9mk8nhd1kqth7rva8vmqtknco.apps.googleusercontent.com',
       scopes: [
         'email',
         'profile',
