@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "540161251770-i4a12v6472ilnmlia5s0ucmmf058ef3g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.timesgaze.timesgaze",
+            "certificate_hash": "8c7602ec19ffd66e016dc80f18519111cfc11f17"
+          }
+        },
+        {
           "client_id": "540161251770-9glr2ct9mk8nhd1kqth7rva8vmqtknco.apps.googleusercontent.com",
           "client_type": 3
         }
