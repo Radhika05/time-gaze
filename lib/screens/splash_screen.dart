@@ -33,7 +33,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   Future<void> _loadVersion() async {
     try {
       final info = await PackageInfo.fromPlatform();
-      if (mounted) setState(() => _version = info.version);
+      if (mounted) {
+        setState(() => _version = '${info.version}+${info.buildNumber}');
+      }
     } catch (_) {}
   }
 

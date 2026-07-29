@@ -170,6 +170,39 @@ class AuthRepository {
         _googleSignIn = googleSignIn;
 
   static const String _albumsPrefsKey = 'picker_albums_v2';
+  static const String _pickerSessionPrefsKey = 'picker_session_v1';
+
+  /// Persists the in-progress picker session so it survives the app process
+  /// being killed while backgrounded (common on many Android OEMs while the
+  /// external browser is in the foreground for photo selection).
+  Future<void> _persistPickerSession(Map<String, String> session) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pickerSessionPrefsKey, json.encode(session));
+  }
+
+  Future<void> _clearPersistedPickerSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pickerSessionPrefsKey);
+  }
+
+  /// Restores a picker session left over from before the app process was
+  /// killed, so the UI can re-show the "I've selected my photos" fallback
+  /// (or an auto-check can be attempted) instead of looking like nothing
+  /// happened after the user picked photos in the browser.
+  Future<Map<String, String>?> restorePickerSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_pickerSessionPrefsKey);
+    if (raw == null) return null;
+    try {
+      final session = Map<String, String>.from(json.decode(raw));
+      ref.read(pickerSessionProvider.notifier).state = session;
+      return session;
+    } catch (e) {
+      AppLogger.e('Error restoring picker session', error: e);
+      await _clearPersistedPickerSession();
+      return null;
+    }
+  }
 
   Future<List<PickerAlbum>> loadPickerAlbums() async {
     try {
@@ -673,6 +706,7 @@ class AuthRepository {
           'pickerUri': data['pickerUri'] as String,
         };
         ref.read(pickerSessionProvider.notifier).state = session;
+        await _persistPickerSession(session);
 
         await launchUrl(
           Uri.parse(session['pickerUri']!),
@@ -771,6 +805,7 @@ class AuthRepository {
         headers: authHeaders,
       );
       ref.read(pickerSessionProvider.notifier).state = null;
+      await _clearPersistedPickerSession();
 
       return photosfinal.isNotEmpty;
     } catch (e) {
@@ -787,6 +822,7 @@ class AuthRepository {
     ref.read(pickerSessionProvider.notifier).state = null;
     ref.read(pickerAlbumsProvider.notifier).state = [];
     photosfinal = [];
+    await _clearPersistedPickerSession();
 
     // disconnect() revokes app access and clears the cached account so the
     // account-picker appears on the next sign-in (enables switching accounts)

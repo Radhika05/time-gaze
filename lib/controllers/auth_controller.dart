@@ -39,6 +39,10 @@ class AuthController {
     return await _authRepository.fetchPickerMediaItems(sessionId, accessToken);
   }
 
+  Future<Map<String, String>?> restorePickerSession() async {
+    return await _authRepository.restorePickerSession();
+  }
+
   Future<List<PickerAlbum>> loadPickerAlbums() async {
     return await _authRepository.loadPickerAlbums();
   }

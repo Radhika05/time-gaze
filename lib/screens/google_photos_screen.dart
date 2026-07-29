@@ -101,6 +101,19 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
     _startSignInTimer();
     _loadInitialToken();
     _loadAlbums();
+    _restorePendingPickerSession();
+  }
+
+  /// Picks up a picker session left over from before the app process was
+  /// killed while backgrounded for photo selection (common on many Android
+  /// devices). Without this, returning from the picker after a process
+  /// restart looks like nothing happened — the session is gone.
+  Future<void> _restorePendingPickerSession() async {
+    final session =
+        await ref.read(authControllerProvider).restorePickerSession();
+    if (session != null && mounted) {
+      _checkPickerSelection(silent: true);
+    }
   }
 
   Future<void> _loadInitialToken() async {
@@ -282,7 +295,8 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
     }
   }
 
-  Future<void> _checkPickerSelection({bool isRetry = false}) async {
+  Future<void> _checkPickerSelection(
+      {bool isRetry = false, bool silent = false}) async {
     final session = ref.read(pickerSessionProvider);
     if (session == null) {
       if (mounted) setState(() => _checkingSelection = false);
@@ -295,6 +309,7 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
       return;
     }
 
+    if (!silent && mounted) setState(() => _checkingSelection = true);
     setState(() => _currentAccessToken = accessToken);
 
     final loaded = await ref
@@ -308,15 +323,20 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
       if (!isRetry) {
         // Retry once after 2 s — handles slight delay in mediaItemsSet update
         await Future.delayed(const Duration(seconds: 2));
-        if (mounted) _checkPickerSelection(isRetry: true);
+        if (mounted) _checkPickerSelection(isRetry: true, silent: silent);
       } else {
         if (mounted) setState(() => _checkingSelection = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'No photos selected yet. Select photos in Google Photos and try again.'),
-          ),
-        );
+        // Silent (auto-restore) checks stay quiet on failure — the session
+        // may just be stale from a much earlier attempt, and the "I've
+        // selected my photos" fallback button remains available regardless.
+        if (!silent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'No photos selected yet. Select photos in Google Photos and try again.'),
+            ),
+          );
+        }
       }
     }
   }
