@@ -396,7 +396,18 @@ class AuthRepository {
   /// Returns true if a fresh access token was obtained (user can skip login).
   Future<bool> tryAutoSignIn() async {
     try {
-      final firebaseUser = _auth.currentUser;
+      // `_auth.currentUser` can still be null right after app start even for
+      // an already-logged-in user: Firebase Auth restores the persisted
+      // session asynchronously after Firebase.initializeApp() completes, and
+      // there's no guarantee that restore has landed yet. Waiting for the
+      // first authStateChanges() event (bounded by a timeout, in case the
+      // user really is signed out) avoids intermittently missing the
+      // existing login.
+      final firebaseUser = _auth.currentUser ??
+          await _auth.authStateChanges().first.timeout(
+                const Duration(seconds: 5),
+                onTimeout: () => null,
+              );
       if (firebaseUser == null) {
         AppLogger.d('Auto sign-in: no Firebase session');
         return false;
