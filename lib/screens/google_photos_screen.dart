@@ -64,6 +64,7 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
   late InternetConnectionChecker _internetChecker;
   bool _hasInternet = true;
   Timer? _offlineDebounce;
+  DateTime? _lastResumedAt;
 
   @override
   void initState() {
@@ -90,10 +91,19 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
             );
           }
         } else {
-          // Debounce: only mark offline after 5 s of sustained no-internet
-          // This prevents false "offline" flashes when returning from the browser
+          // Debounce: only mark offline after sustained no-internet. Right
+          // after returning from the external picker browser, the network
+          // path is briefly unsettled — use a longer window in that case so
+          // a normal reconnect doesn't flash an "offline"/"back online" pair.
+          final sinceResume = _lastResumedAt == null
+              ? null
+              : DateTime.now().difference(_lastResumedAt!);
+          final debounceDelay =
+              (sinceResume != null && sinceResume < const Duration(seconds: 10))
+                  ? const Duration(seconds: 10)
+                  : const Duration(seconds: 5);
           _offlineDebounce?.cancel();
-          _offlineDebounce = Timer(const Duration(seconds: 5), () {
+          _offlineDebounce = Timer(debounceDelay, () {
             if (mounted) setState(() => _hasInternet = false);
           });
         }
@@ -125,6 +135,9 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _lastResumedAt = DateTime.now();
+    }
     if (state == AppLifecycleState.resumed && _pickerOpened) {
       _pickerOpened = false;
       if (mounted) setState(() => _checkingSelection = true);
@@ -243,10 +256,20 @@ class _GooglePhotosState extends ConsumerState<GooglePhotos>
     );
     if (name != null && mounted) {
       setState(() => _savingAlbum = true);
-      await ref
+      final saved = await ref
           .read(authControllerProvider)
           .saveCurrentPhotosAsAlbum(name, _currentAccessToken);
       if (mounted) setState(() => _savingAlbum = false);
+      if (saved == null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Couldn\'t save album — the photos failed to download. Check your connection and try again.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 

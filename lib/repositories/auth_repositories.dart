@@ -835,6 +835,23 @@ class AuthRepository {
     photosfinal = [];
     await _clearPersistedPickerSession();
 
+    // Delete all albums saved by the account signing out — both the
+    // downloaded photo files and the SharedPreferences entry. Without this,
+    // the next account to sign in on this device would inherit the previous
+    // account's albums (loadPickerAlbums() reads the same persisted key),
+    // which is both confusing and a privacy leak between accounts.
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final albumsDir = Directory('${directory.path}/albums');
+      if (await albumsDir.exists()) {
+        await albumsDir.delete(recursive: true);
+      }
+    } catch (e) {
+      AppLogger.w('Error deleting album files on logout', error: e);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_albumsPrefsKey);
+
     // disconnect() revokes app access and clears the cached account so the
     // account-picker appears on the next sign-in (enables switching accounts)
     try {
@@ -849,7 +866,6 @@ class AuthRepository {
     await storage.delete(key: 'access_token');
     await storage.delete(key: 'refresh_token');
 
-    final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isLoggedIn', false);
 
     AppLogger.i('User signed out');
