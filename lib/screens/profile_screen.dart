@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:timesgaze/common/constants.dart';
 import 'package:timesgaze/repositories/auth_repositories.dart';
 
@@ -90,6 +91,22 @@ class ProfileScreen extends ConsumerWidget {
               ),
               SizedBox(
                 height: deviceheight * 0.05899,
+              ),
+              FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) {
+                  final info = snapshot.data;
+                  final versionText = info == null
+                      ? ''
+                      : 'App Version: ${info.version}+${info.buildNumber}';
+                  return Text(
+                    versionText,
+                    style: TextStyle(
+                      fontSize: deviceheight * 0.018,
+                      color: Colors.grey,
+                    ),
+                  );
+                },
               ),
             ]),
       ),

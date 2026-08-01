@@ -41,53 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDAZkAd60cGw5mMnZ1jALZ7EUW1jtjqmh0',
-    appId: '1:318926159367:web:29587eea330cf9b2d6b4a2',
-    messagingSenderId: '318926159367',
-    projectId: 'timesgaze-41052',
-    authDomain: 'timesgaze-41052.firebaseapp.com',
-    storageBucket: 'timesgaze-41052.appspot.com',
-    measurementId: 'G-1F1LL7RZC1',
+    apiKey: 'AIzaSyBd1sunYst79rX3hTsVpA902BaW0S8mcAY',
+    appId: '1:540161251770:web:a2f4fa6738faf472fde583',
+    messagingSenderId: '540161251770',
+    projectId: 'timesgaze-6076f',
+    authDomain: 'timesgaze-6076f.firebaseapp.com',
+    storageBucket: 'timesgaze-6076f.firebasestorage.app',
+    measurementId: 'G-7QNEW3WGE2',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyA47Gsryenocs9uGNNJ6eU5M-GLnTBzYVY',
-    appId: '1:989810994749:android:2475b198a638c7dab50454',
-    messagingSenderId: '989810994749',
-    projectId: 'timesgaze-8c00f',
-    storageBucket: 'timesgaze-8c00f.firebasestorage.app',
+    apiKey: 'AIzaSyBnvPq-rw4f1YqvSKXo0QUCUv5bmPeDpbo',
+    appId: '1:540161251770:android:422d35c47181652efde583',
+    messagingSenderId: '540161251770',
+    projectId: 'timesgaze-6076f',
+    storageBucket: 'timesgaze-6076f.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAYM1usMVnin9ZrKEbaPwwfTsPse0lYZwY',
-    appId: '1:318926159367:ios:0dd61ac11f3b9c5bd6b4a2',
-    messagingSenderId: '318926159367',
-    projectId: 'timesgaze-41052',
-    storageBucket: 'timesgaze-41052.appspot.com',
-    androidClientId: '318926159367-05r8fo5kr7dliipu3v898ghm7j9sfm3s.apps.googleusercontent.com',
-    iosClientId: '318926159367-1uonio91oh4ui7m3j7lp5a8c1q7r9amu.apps.googleusercontent.com',
+    apiKey: 'AIzaSyBMLQwiFhoUvNVb0rof4JMOmUiVM1lYVOw',
+    appId: '1:540161251770:ios:cc63e6a9741b333cfde583',
+    messagingSenderId: '540161251770',
+    projectId: 'timesgaze-6076f',
+    storageBucket: 'timesgaze-6076f.firebasestorage.app',
     iosBundleId: 'com.timesgaze.timesgaze',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyAYM1usMVnin9ZrKEbaPwwfTsPse0lYZwY',
-    appId: '1:318926159367:ios:0dd61ac11f3b9c5bd6b4a2',
-    messagingSenderId: '318926159367',
-    projectId: 'timesgaze-41052',
-    storageBucket: 'timesgaze-41052.appspot.com',
-    androidClientId: '318926159367-05r8fo5kr7dliipu3v898ghm7j9sfm3s.apps.googleusercontent.com',
-    iosClientId: '318926159367-1uonio91oh4ui7m3j7lp5a8c1q7r9amu.apps.googleusercontent.com',
+    apiKey: 'AIzaSyBMLQwiFhoUvNVb0rof4JMOmUiVM1lYVOw',
+    appId: '1:540161251770:ios:cc63e6a9741b333cfde583',
+    messagingSenderId: '540161251770',
+    projectId: 'timesgaze-6076f',
+    storageBucket: 'timesgaze-6076f.firebasestorage.app',
     iosBundleId: 'com.timesgaze.timesgaze',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDAZkAd60cGw5mMnZ1jALZ7EUW1jtjqmh0',
-    appId: '1:318926159367:web:574b04e03dcea9e1d6b4a2',
-    messagingSenderId: '318926159367',
-    projectId: 'timesgaze-41052',
-    authDomain: 'timesgaze-41052.firebaseapp.com',
-    storageBucket: 'timesgaze-41052.appspot.com',
-    measurementId: 'G-EH1YCXS24N',
+    apiKey: 'AIzaSyBd1sunYst79rX3hTsVpA902BaW0S8mcAY',
+    appId: '1:540161251770:web:46eead5b4b0f28e5fde583',
+    messagingSenderId: '540161251770',
+    projectId: 'timesgaze-6076f',
+    authDomain: 'timesgaze-6076f.firebaseapp.com',
+    storageBucket: 'timesgaze-6076f.firebasestorage.app',
+    measurementId: 'G-9LWQB2DNY2',
   );
 
 }

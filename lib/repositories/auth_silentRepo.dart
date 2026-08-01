@@ -17,16 +17,16 @@ class authSilent {
   ProviderRef? ref;
   Future<void> signInSilentlywithFetchAlbum() async {
     final GoogleSignInAccount? user = await _googleSignIn!.signInSilently();
-    print(user!.authHeaders);
-    final googleAuth = (await user?.authentication);
+    if (user == null) return;
 
+    final googleAuth = await user.authentication;
     final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth?.accessToken,
-      idToken: googleAuth?.idToken,
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
     );
-    final authHeaders1 = await user!.authHeaders;
+    final authHeaders1 = await user.authHeaders;
     print(authHeaders1);
-    print("access token silently ${googleAuth!.accessToken}");
+    print("access token silently ${googleAuth.accessToken}");
     await fetchAlbums(authHeaders1);
     // Navigator.pushReplacement(
     //   context!,

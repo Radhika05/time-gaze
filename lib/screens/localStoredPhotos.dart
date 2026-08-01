@@ -187,8 +187,7 @@ class _GetPhotosFromLocalStorageState
                             //  autoPlayInterval: const Duration(seconds: 2),
                             enableInfiniteScroll: false,
                           ),
-                          itemCount: 30,
-                          //ref.read(photosNoInternetProvider).length,
+                          itemCount: ref.watch(photosNoInternetProvider).length,
 
                           // (selectedOption == 'Last In')
                           //     ? storedPhotos.length
@@ -233,12 +232,7 @@ class _GetPhotosFromLocalStorageState
                         bottom: 0.04424 * deviceheight),
                     child: ElevatedButton(
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text("No internet connection"),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                        ref.read(islaunchphoto.notifier).state = true;
                       },
                       child: const Text(
                         'Launch Photo Frame',
